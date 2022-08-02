@@ -43,8 +43,8 @@ class MSDNAnnotationDialog(QtWidgets.QDialog):
     def read_config(self):
         config = {}
         if not self.config_parser.has_section('Functions') or \
-           not self.config_parser.has_section('Arguments') or \
-           not self.config_parser.has_section('Constants'):
+               not self.config_parser.has_section('Arguments') or \
+               not self.config_parser.has_section('Constants'):
             # Create default
             self.config_parser.add_section('Functions')
             self.config_parser.add_section('Arguments')
@@ -119,7 +119,12 @@ class MSDNAnnotationDialog(QtWidgets.QDialog):
         if not os.path.exists(msdnpath):
             g_logger.info('Error - no msdn info file: %s', msdnpath)
             ret = QtWidgets.QMessageBox.warning(
-                self, 'MSDN Info Not Found', 'The file %s was not found in the specified MSDN Data Directory' % IDB_MSDN_Annotator.MSDN_INFO_FILE, QtWidgets.QMessageBox.Ok)
+                self,
+                'MSDN Info Not Found',
+                f'The file {IDB_MSDN_Annotator.MSDN_INFO_FILE} was not found in the specified MSDN Data Directory',
+                QtWidgets.QMessageBox.Ok,
+            )
+
             # self.done(QtWidgets.QDialog.Rejected)
             return
 
@@ -227,8 +232,7 @@ class MSDNAnnotationDialog(QtWidgets.QDialog):
         self.setLayout(h_layout)
 
     def __init__(self, parent=None):
-        self._logger = logging.getLogger(__name__ + '.' +
-                                         self.__class__.__name__)
+        self._logger = logging.getLogger((f'{__name__}.' + self.__class__.__name__))
         self._logger.debug('Starting UI')
         QtWidgets.QDialog.__init__(self, parent, QtCore.Qt.WindowSystemMenuHint |
                                    QtCore.Qt.WindowTitleHint)

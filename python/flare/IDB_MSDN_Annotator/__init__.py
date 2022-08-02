@@ -93,7 +93,7 @@ def get_imports(library_calls, library_addr):
     """ Populate dictionaries with import information. """
     import_names_callback = make_import_names_callback(library_calls,
                                                        library_addr)
-    for i in range(0, idaapi.get_import_module_qty()):
+    for i in range(idaapi.get_import_module_qty()):
         idaapi.enum_import_names(i, import_names_callback)
 
 
@@ -110,8 +110,12 @@ def add_fct_descr(ea, function, rep):
     function -- function object holding data
     rep -- add repeatable comment (True/False)
     """
-    descr = format_comment(function.description) + '\n' + \
-        format_comment('RETURN VALUE: ' + function.returns)
+    descr = (
+        format_comment(function.description)
+        + '\n'
+        + format_comment(f'RETURN VALUE: {function.returns}')
+    )
+
     # Both functions do not return
     if rep:
         idc.set_cmt(ea, descr, 1)
@@ -155,16 +159,17 @@ def get_segment_end_ea(ea):
     addr = ea
     while idc.get_cmt(addr, 0) is not None:
         addr = addr + 1
-    if addr > idc.get_segm_end(ea):
-        g_logger.debug('Address {} out of segment bounds. Expanding segment.'
-                       .format(hex(addr)))
-        try:
-            expand_segment(ea)
-        except FailedToExpandSegmentException as e:
-            g_logger.warning(e.message)
-            raise e
-    else:
+    if addr <= idc.get_segm_end(ea):
         return addr
+    g_logger.debug(
+        f'Address {hex(addr)} out of segment bounds. Expanding segment.'
+    )
+
+    try:
+        expand_segment(ea)
+    except FailedToExpandSegmentException as e:
+        g_logger.warning(e.message)
+        raise e
 
 
 def append_segment(segment_name):
@@ -177,13 +182,22 @@ def append_segment(segment_name):
     """
     for segment in idautils.Segments():
         if idc.get_segm_name(segment) == segment_name:
-            g_logger.warning('Segment ' + segment_name + ' already exists')
+            g_logger.warning(f'Segment {segment_name} already exists')
             return idc.get_segm_start(segment)
 
     new_segment_start = get_end_of_last_segment()
     g_logger.debug('Adding new segment at 0x%08x' % new_segment_start)
-    if not idc.AddSeg(new_segment_start, (new_segment_start+NEW_SEGMENT_SIZE),
-                      0, 1, 0, idaapi.scPub) == 1:
+    if (
+        idc.AddSeg(
+            new_segment_start,
+            (new_segment_start + NEW_SEGMENT_SIZE),
+            0,
+            1,
+            0,
+            idaapi.scPub,
+        )
+        != 1
+    ):
         raise FailedToAppendSegmentException('Could not add segment')
     # set new segment's attributes
     if not idc.set_segm_name(new_segment_start, segment_name):
@@ -200,10 +214,7 @@ def append_segment(segment_name):
 
 def name_exists(name):
     """ Return 'True' if name exists in current IDB file. """
-    for _, existing_names in idautils.Names():  # generates (addr, name) tuples
-        if name in existing_names:
-            return True
-    return False
+    return any(name in existing_names for _, existing_names in idautils.Names())
 
 
 def add_arg_descr(function, segment_ea, arg_description_format):
@@ -232,12 +243,12 @@ def add_arg_descr(function, segment_ea, arg_description_format):
         }
         name = arg_description_format.format(**fields)
         if not name_exists(name):
-            g_logger.debug(' Adding name {} at {}'.format(name, hex(free_ea)))
+            g_logger.debug(f' Adding name {name} at {hex(free_ea)}')
             idaapi.set_name(free_ea, name)
             description = argument.description[:MAX_ARG_DESCR_LEN]
             idc.set_cmt(free_ea, format_comment(description), 0)
         else:
-            g_logger.debug(' Name %s already exists' % name)
+            g_logger.debug(f' Name {name} already exists')
     return (free_ea + 1)
 
 
@@ -260,8 +271,9 @@ def find_arg_ea(ea_call, arg_name):
             return prev_instr
         prev_instr = idc.prev_head(
             prev_instr, prev_instr - PREVIOUS_INSTR_DELTA)
-    raise ArgumentNotFoundException('  Argument {} not found within threshold'
-                                    .format(arg_name))
+    raise ArgumentNotFoundException(
+        f'  Argument {arg_name} not found within threshold'
+    )
 
 
 def add_enums(function):
@@ -275,19 +287,21 @@ def add_enums(function):
     for argument in function.arguments:
         # Add standard enums
         if not argument.enums:
-            g_logger.debug(' No standard constants available for %s' %
-                           argument.name)
+            g_logger.debug(f' No standard constants available for {argument.name}')
         else:
             for enum in argument.enums:
-                g_logger.debug('  Importing enum %s for argument %s' %
-                               (enum, argument.name))
+                g_logger.debug(f'  Importing enum {enum} for argument {argument.name}')
                 if idc.import_type(-1, enum) != idaapi.BADADDR:
-                    g_logger.debug('  ' + enum + ' ' +
-                                   hex(idc.get_enum(enum)) +
-                                   ' added successfully')
+                    g_logger.debug(
+                        (
+                            (f'  {enum} ' + hex(idc.get_enum(enum)))
+                            + ' added successfully'
+                        )
+                    )
+
                     enum_count = enum_count + 1
                 else:
-                    g_logger.debug('  Could not add ' + enum)
+                    g_logger.debug(f'  Could not add {enum}')
 
         if not argument.constants:
             # No constants for this argument
@@ -300,8 +314,7 @@ def add_enums(function):
         for constant in argument.constants:
             if constant.name == 'NULL':
                 # Create unique name, so we can add descriptive comment to it
-                constant.name = 'NULL_{}_{}'.format(argument.name,
-                                                    function.name)
+                constant.name = f'NULL_{argument.name}_{function.name}'
                 # Add custom enum for NULL values if it does not exist yet
                 enumid = idc.get_enum(NULL_ENUM_NAME)
                 if enumid == idaapi.BADADDR:
@@ -311,18 +324,14 @@ def add_enums(function):
                 constid = idc.get_enum_member_by_name(constant.name)
                 idc.set_enum_member_cmt(constid, format_comment(constant.description),
                                         False)
-            else:
-                constid = idc.get_enum_member_by_name(constant.name)
-                if constid:
-                    if idc.set_enum_member_cmt(constid,
+            elif constid := idc.get_enum_member_by_name(constant.name):
+                if idc.set_enum_member_cmt(constid,
                                                format_comment(
                                                    constant.description),
                                                False):
-                        g_logger.debug('    Description added for %s' %
-                                       constant.name)
-                    else:
-                        g_logger.debug('    No description added for %s' %
-                                       constant.name)
+                    g_logger.debug(f'    Description added for {constant.name}')
+                else:
+                    g_logger.debug(f'    No description added for {constant.name}')
     return enum_count
 
 
@@ -363,8 +372,7 @@ def rename_constant(arg_ea, fct_name, arg_name, arg_enums):
     op_val = idc.get_operand_value(arg_ea, op_num)
     # NULL
     if op_val == 0:
-        targetid = idc.get_enum_member_by_name(
-            'NULL_{}_{}'.format(arg_name, fct_name))
+        targetid = idc.get_enum_member_by_name(f'NULL_{arg_name}_{fct_name}')
         serial = 0
         enumid = idc.get_enum(NULL_ENUM_NAME)
         constid = idc.get_enum_member(enumid, 0, serial, -1)
@@ -390,10 +398,9 @@ def rename_constant(arg_ea, fct_name, arg_name, arg_enums):
             if constid == idaapi.BADADDR:
                 # Not in this enum
                 continue
-            else:
-                # Found the right enum
-                idc.op_enum(arg_ea, op_num, enumid, 0)
-                return
+            # Found the right enum
+            idc.op_enum(arg_ea, op_num, enumid, 0)
+            return
 
 
 def rename_argument(ea, function, argument, arg_description_format):
@@ -418,8 +425,7 @@ def rename_args_and_consts(ref, function, conf_constants_import,
             g_logger.debug(e.message)
             continue
         if conf_constants_import and argument.enums != []:
-            g_logger.debug('  renaming constant {} ({})'.format(argument.name,
-                                                                hex(arg_ea)))
+            g_logger.debug(f'  renaming constant {argument.name} ({hex(arg_ea)})')
             try:
                 rename_constant(arg_ea, function.name, argument.name,
                                 argument.enums)
@@ -427,8 +433,7 @@ def rename_args_and_consts(ref, function, conf_constants_import,
                 g_logger.warning(e)
 
         if conf_arguments_annotate:
-            g_logger.debug('  renaming argument {} ({})'.format(argument.name,
-                                                                hex(arg_ea)))
+            g_logger.debug(f'  renaming argument {argument.name} ({hex(arg_ea)})')
             rename_argument(arg_ea, function, argument,
                             conf_arg_description_format)
 
@@ -440,8 +445,8 @@ def backup_database():
     if not file:
         raise NoInputFileException('No input file provided')
     input_file = file.rsplit('.', 1)[0]
-    backup_file = '%s_%s.idb' % (input_file, time_string)
-    g_logger.info('Backing up database to file ' + backup_file)
+    backup_file = f'{input_file}_{time_string}.idb'
+    g_logger.info(f'Backing up database to file {backup_file}')
     idc.save_database(backup_file, idaapi.DBFL_BAK)
 
 
@@ -453,12 +458,13 @@ def get_data_files(dir):
     dir -- path where XML data files reside
     """
     data_files = os.listdir(dir)
-    if MSDN_INFO_FILE in data_files:
-        data_files.remove(MSDN_INFO_FILE)
-        return data_files
-    else:
-        raise IOError('Main database file ' + MSDN_INFO_FILE + ' not found' +
-                      ' in ' + dir)
+    if MSDN_INFO_FILE not in data_files:
+        raise IOError(
+            ((f'Main database file {MSDN_INFO_FILE} not found' + ' in ') + dir)
+        )
+
+    data_files.remove(MSDN_INFO_FILE)
+    return data_files
 
 
 def parse_xml_data_files(msdn_data_dir):
@@ -467,14 +473,10 @@ def parse_xml_data_files(msdn_data_dir):
     Arguments:
     msdn_data_dir -- path to the directory storing the XML data files
     """
-    functions_map = {}
-
     # Parse main database file first
     xml_file = os.path.join(msdn_data_dir, MSDN_INFO_FILE)
     functions = xml_parser.parse(xml_file)
-    for function in functions:
-        functions_map[function.name] = function
-
+    functions_map = {function.name: function for function in functions}
     # Parse additional files
     data_files = get_data_files(msdn_data_dir)
     for file in data_files:
@@ -498,17 +500,19 @@ def main(config=None):
         try:
             backup_database()
         except NoInputFileException as e:
-            g_logger.warn('Quitting execution: ' + e.message)
+            g_logger.warn(f'Quitting execution: {e.message}')
             return
 
     # Default config in case none is provided
     config['arg_description_format'] = '{argument_name}_{function_name}'
     if not config:
-        config = {}
-        config['functions_annotate'] = True
-        config['functions_repeatable_comment'] = False
-        config['arguments_annotate'] = True
-        config['constants_import'] = True
+        config = {
+            'functions_annotate': True,
+            'functions_repeatable_comment': False,
+            'arguments_annotate': True,
+            'constants_import': True,
+        }
+
         config['msdn_data_dir'] = os.path.abspath(
             os.path.join(idaapi.get_user_idadir(), 'MSDN_data'))
 
@@ -528,7 +532,7 @@ def main(config=None):
 
     # Append segment where function argument information will be stored
     try:
-        g_logger.debug('Appending new segment %s' % NEW_SEGMENT_NAME)
+        g_logger.debug(f'Appending new segment {NEW_SEGMENT_NAME}')
         free_ea = append_segment(NEW_SEGMENT_NAME)
     except FailedToAppendSegmentException(Exception) as e:
         g_logger.debug(e.message)
@@ -551,7 +555,7 @@ def main(config=None):
                 functions_not_found.append(fct_name)
                 continue
 
-        g_logger.debug('Working on function %s' % fct_name)
+        g_logger.debug(f'Working on function {fct_name}')
         if config['functions_annotate']:
             # Add function description to import table
             add_fct_descr(library_addr[fct_name],
@@ -559,11 +563,8 @@ def main(config=None):
                           config['functions_repeatable_comment'])
 
         if config['constants_import']:
-            # Add enums for extracted constant data
-            num_added_enums = add_enums(functions_map[fct_name])
-            if num_added_enums:
-                g_logger.debug(' Added {} ENUMs for {}'.format(num_added_enums,
-                                                               fct_name))
+            if num_added_enums := add_enums(functions_map[fct_name]):
+                g_logger.debug(f' Added {num_added_enums} ENUMs for {fct_name}')
 
         # Add argument description in newly created segment
         free_ea = add_arg_descr(functions_map[fct_name],
@@ -571,8 +572,10 @@ def main(config=None):
 
         # Rename arguments and constants so they link to set names
         for ref in eas:
-            g_logger.debug(' Enhancing argument and constant info for {} ({})'
-                           .format(fct_name, hex(ref)))
+            g_logger.debug(
+                f' Enhancing argument and constant info for {fct_name} ({hex(ref)})'
+            )
+
             rename_args_and_consts(ref, functions_map[fct_name],
                                    config['constants_import'],
                                    config['arguments_annotate'],
@@ -584,10 +587,8 @@ def main(config=None):
     logging.info('======================')
     logging.info(' Functions not found')
     logging.info(' -------------------')
-    i = 1
-    for f in functions_not_found:
-        logging.info('  {}\t{}'.format(i, f))
-        i += 1
+    for i, f in enumerate(functions_not_found, start=1):
+        logging.info(f'  {i}\t{f}')
     logging.info('')
 
 

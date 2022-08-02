@@ -37,34 +37,36 @@ cot_obj  cot_cast
 '''
 
 def findGetProcAddress(cfunc):
+
+
+
     class visitor(idaapi.ctree_visitor_t):
         def __init__(self, cfunc):
             idaapi.ctree_visitor_t.__init__(self, idaapi.CV_FAST)
             self.cfunc = cfunc
 
         def visit_expr(self, i):
-            if i.op == idaapi.cot_call:
-                # look for calls to GetProcAddress
-                if idc.Name(i.x.obj_ea) == "GetProcAddress":
+            if (
+                i.op == idaapi.cot_call
+                and idc.Name(i.x.obj_ea) == "GetProcAddress"
+                and idc.GetStringType(i.a[1].obj_ea) == 0
+            ):
+                targetName = idc.GetString(i.a[1].obj_ea, -1, 0)
 
-                    # ASCSTR_C == 0
-                    # Check to see if the second argument is a C string
-                    if idc.GetStringType(i.a[1].obj_ea) == 0:
-                        targetName = idc.GetString(i.a[1].obj_ea, -1, 0)
+                # Found function name
+                # Look for global assignment
+                parent = self.cfunc.body.find_parent_of(i)
+                if parent.op == idaapi.cot_cast:
+                    # Ignore casts and look for the parent
+                    parent = self.cfunc.body.find_parent_of(parent)
 
-                        # Found function name
-                        # Look for global assignment
-                        parent = self.cfunc.body.find_parent_of(i)
-                        if parent.op == idaapi.cot_cast:
-                            # Ignore casts and look for the parent
-                            parent = self.cfunc.body.find_parent_of(parent)
-
-                        if parent.op == idaapi.cot_asg:
+                if parent.op == idaapi.cot_asg:
                             # We want to find the left hand side (x)
-                            idc.MakeName(parent.cexpr.x.obj_ea, targetName + "_")
+                    idc.MakeName(parent.cexpr.x.obj_ea, f"{targetName}_")
 
             return 0
-    
+
+
     v = visitor(cfunc)
     v.apply_to(cfunc.body, None)
 

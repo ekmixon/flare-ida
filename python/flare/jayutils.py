@@ -54,16 +54,16 @@ def extractBasicWideString(inStr):
 def isValidPointer(va):
     if using_ida7api:
         return isValidPointer_ida7(va)
-    for segStart in idautils.Segments():
-        if (va >= segStart) and (va < idc.SegEnd(segStart)):
-            return True
-    return False
+    return any(
+        (va >= segStart) and (va < idc.SegEnd(segStart))
+        for segStart in idautils.Segments()
+    )
 
 def isValidPointer_ida7(va):
-    for segStart in idautils.Segments():
-        if (va >= segStart) and (va < idc.get_segm_end(segStart)):
-            return True
-    return False
+    return any(
+        (va >= segStart) and (va < idc.get_segm_end(segStart))
+        for segStart in idautils.Segments()
+    )
 
 ########################################
 def getString(ea, maxLen=0x200):
@@ -202,9 +202,7 @@ def handleErrorRaiseError(record):
     raise
 
 def _getPrintChar(c):
-    if (ord(c) >= 0x20) and (ord(c) <= 0x7e):
-        return c
-    return '.'
+    return c if (ord(c) >= 0x20) and (ord(c) <= 0x7e) else '.'
 
 def _formatLine(num, inBytes):
     hexBytes = []
@@ -288,7 +286,7 @@ def getInputFilepath():
         return getInputFilepath_ida7()
     filePath = idc.GetInputFilePath()
     if not os.path.exists(filePath):
-        print ('IDB input file not found. Prompting for new one: %s' % filePath)
+        print(f'IDB input file not found. Prompting for new one: {filePath}')
         filePath = idc.AskFile(False, '*.*', 'Enter path to idb input file')
         if filePath is not None:
             idc.SetInputFilePath(filePath)
@@ -299,7 +297,7 @@ def getInputFilepath_ida7():
     '''Returns None if the uesr cancels. Updates the filepath in the idb on success'''
     filePath = idc.get_input_file_path()
     if not os.path.exists(filePath):
-        print ('IDB input file not found. Prompting for new one: %s' % filePath)
+        print(f'IDB input file not found. Prompting for new one: {filePath}')
         filePath = idaapi.ask_file(False, '*.*', 'Enter path to idb input file')
         if filePath is not None:
             idc.set_root_filename(filePath)
@@ -330,7 +328,7 @@ def loadWorkspace(filename, fast=False):
     vw = vivisect.VivWorkspace()
     vivName = queryIdbNetnode(VIV_WORKSPACE_NAME)
     if vivName is None or not os.path.exists(vivName):
-        vivName = filename + '.viv'
+        vivName = f'{filename}.viv'
         if os.path.exists(vivName):
             logger.info('Loading existing workspace %s', vivName)
             sys.stdout.flush()
@@ -377,7 +375,7 @@ def setIdbNetnode(key, value):
 
 def path_dfs(node, func, **kwargs):
     todo = [node]
-    while len(todo) != 0:
+    while todo:
         #node is a tuple of (parent, child_list, prop_dict)
         cur = todo.pop(0)
         #insert children at start of queue
@@ -388,7 +386,7 @@ def path_dfs(node, func, **kwargs):
  
 def path_bfs(node, func, **kwargs):
     todo = [node]
-    while len(todo) != 0:
+    while todo:
         #node is a tuple of (parent, child_list, prop_dict)
         cur = todo.pop(0)
         #append children to end of queue
@@ -416,7 +414,7 @@ def getAllXrefsTo(vw, va):
     try:
         op = vw.parseOpcode(lva)
     except Exception:
-        print ('Weird error while doing getAllXrefsTo: %s' % str(err))
+        print(f'Weird error while doing getAllXrefsTo: {str(err)}')
         return init
     brlist = op.getBranches()
     for tova,bflags in brlist:

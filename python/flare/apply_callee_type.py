@@ -57,14 +57,14 @@ MSDN_MACROS = [
 
 
 def predFunc(*args):
-    print('Running predFunc: %s' % str(args))
+    print(f'Running predFunc: {args}')
 
 def manualTypeCopy(dest, destOff, destLen, src):
     '''Copies an IDA type 'string' to the given location'''
     i = 0
     while (i+destOff) < destLen:
         dest[i+destOff] = chr(src[i])
-        if (src[i] == 0) or (src[i] == '\x00'):
+        if src[i] in [0, '\x00']:
             break
         i += 1
 
@@ -117,7 +117,7 @@ class ApplyCalleeTypeRunner(object):
 
         tuple = idaapi.get_named_type(sym.til, sym.name, 0)
 
-        if tuple == None:
+        if tuple is None:
             logger.debug('Could not find %s', sym.name)
             return
 
@@ -133,13 +133,13 @@ class ApplyCalleeTypeRunner(object):
         # Several type-related functions aren't accessibly via IDAPython
         # so have to do things with ctypes
         idaname = "ida64" if idc.__EA64__ else "ida"
-        if sys.platform == "win32":
-            g_dll = ctypes.windll[idaname + ".wll"]
-        elif sys.platform == "linux2":
-            g_dll = ctypes.cdll["lib" + idaname + ".so"]
-        elif sys.platform == "darwin":
-            g_dll = ctypes.cdll["lib" + idaname + ".dylib"]
+        if sys.platform == "darwin":
+            g_dll = ctypes.cdll[f"lib{idaname}.dylib"]
 
+        elif sys.platform == "linux2":
+            g_dll = ctypes.cdll[f"lib{idaname}.so"]
+        elif sys.platform == "win32":
+            g_dll = ctypes.windll[f"{idaname}.wll"]
         ############################################################
         # Specifying function types for a few IDA SDK functions to keep the 
         # pointer-to-pointer args clear.
@@ -241,18 +241,12 @@ class ApplyCalleeTypeRunner(object):
         try:
             here = idc.here()
             logger.info('Using ea: 0x%08x', here)
-            if using_ida7api:
-                mnem = idc.print_insn_mnem(here)
-            else:
-                mnem =  idc.print_insn_mnem(here)
+            mnem = idc.print_insn_mnem(here)
             if not mnem.startswith('call'):
                 logger.info('Not running at a call instruction. Bailing out now')
                 return
 
-            if using_ida7api:
-                optype = idc.get_operand_type(here, 0) 
-            else:
-                optype = idc.get_operand_type(here, 0) 
+            optype = idc.get_operand_type(here, 0)
             if optype == idc.o_near:
                 logger.info("Cannot (or shouldn't) run when call optype is o_near")
                 return
@@ -347,7 +341,7 @@ def main():
         launcher.run()
     except Exception as err:
         import traceback
-        print(('Error in act: %s: %s' % (str(err), traceback.format_exc())))
+        print(f'Error in act: {str(err)}: {traceback.format_exc()}')
 
 if __name__ == '__main__':
     main()

@@ -68,9 +68,6 @@ def getFunctionArgumentCount(ea):
         elif name  == ' r':
             #print 'Found r at 0x%x:' % midx
             rFound = True
-        else:
-            #print 'Found nonarg at 0x%x: "%s"' % (midx, name)
-            pass
         midx = idc.GetStrucNextOff(sid, midx)
     return argCount
 

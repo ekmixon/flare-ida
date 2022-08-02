@@ -74,9 +74,9 @@ class AArch64LDRInstruction(object):
             Exception -- [Invalid instruction length]
             Exception -- [Invalid endianness]
         """
-        if not len(instruction_bytes)==4:
+        if len(instruction_bytes) != 4:
             raise Exception("Invalid instruction length: %d" % len(instruction_bytes))
-        if endianness != self.ENDIANNESS_BIG and endianness != self.ENDIANNESS_LITTLE:
+        if endianness not in [self.ENDIANNESS_BIG, self.ENDIANNESS_LITTLE]:
             raise Exception("Invalid endianness value.")
 
         self.endianness=endianness
@@ -86,18 +86,11 @@ class AArch64LDRInstruction(object):
         
 
     def __unpack(self,bytes):
-        if self.endianness==self.ENDIANNESS_LITTLE:
-            fmt="<I"
-        else:
-            fmt=">I"
-
+        fmt = "<I" if self.endianness==self.ENDIANNESS_LITTLE else ">I"
         return struct.unpack(fmt,bytes)[0]
 
     def __pack(self,number):
-        if self.endianness==self.ENDIANNESS_LITTLE:
-            fmt="<I"
-        else:
-            fmt=">I"
+        fmt = "<I" if self.endianness==self.ENDIANNESS_LITTLE else ">I"
         return struct.pack(fmt,number)
 
     def __shiftL32(self,num,count):
@@ -109,14 +102,14 @@ class AArch64LDRInstruction(object):
     def __decode_ldr(self):
         ldr_literal_64_op=0b01011000
         op=self.__shiftR32(self.instruction_int,24)
-        if not op==ldr_literal_64_op:
+        if op != ldr_literal_64_op:
             raise Exception("Not a valid LDR (literal) instruction)")
         self.op=op
         imm19_mask=self.__shiftL32(self.__shiftR32(0x00ffffff,5),5)
-        
+
         imm19=self.__shiftR32((self.instruction_int&imm19_mask),5)
         offset=imm19*4 #shift imm19<<2
-        
+
         self.offset=offset
 
         rt_mask=0b11111
@@ -174,14 +167,14 @@ class ObjcClass(object):
         class_ro_va=get_qword(objc_class_va+self.OBJC2_CLASS_RO_OFFSET)
         self.name_pointer=get_qword(class_ro_va+self.OBJC2_CLASS_RO_NAME_OFFSET)
         self.method_list=[]
-        if class_ro_va == BADADDR or class_ro_va==0:
+        if class_ro_va in [BADADDR, 0]:
             self.class_ro_va=None
             return
         self.class_ro_va=class_ro_va
 
         class_methods_va=get_qword(class_ro_va+self.OBJC2_CLASS_RO_BASE_METHODS_OFFSET)
 
-        if class_methods_va == BADADDR or class_methods_va==0:
+        if class_methods_va in [BADADDR, 0]:
             self.class_methods_va=None
             return
         self.class_methods_va=class_methods_va
@@ -191,10 +184,7 @@ class ObjcClass(object):
         self.method_list=ObjcMethodList(class_methods_va,segment_map,arch=arch)
 
     def patched_xrefs(self):
-        if len(self.method_list)>0:
-            return self.method_list.patched_xrefs()
-        else:
-            return []
+        return self.method_list.patched_xrefs() if len(self.method_list)>0 else []
 
 
 
@@ -496,13 +486,13 @@ class ObjCMethodXRefs(list):
         segment_names=["__objc_data","__objc_selrefs","__objc_msgrefs","__objc_const"]
 
         segment_map=self.find_all_segments(segment_names)
-        
+
         # Segment map looks like:
         # {
         #     "__objc_data":(obc_data_start_va,objc_data_end_va),
         #     ...
         # }
-        
+
         for name in segment_names:
             if name not in segment_map:
                 raise ObjCException("Couldn't find segment %s" % name)
@@ -532,9 +522,6 @@ class ObjCMethodXRefs(list):
 
 
 def detect_arch():
-    #heuristically determine what architecture we're on
-    #only x86-64 and arm64 are supported
-    is_le=False
     bits=0
     info = get_inf_structure()
     arch=ARCH_UNKNOWN
@@ -545,9 +532,7 @@ def detect_arch():
     else:
         bits=16
 
-    if not info.is_be():
-        is_le=True
-
+    is_le = not info.is_be()
     procname=info.procName
     if bits==64 and is_le:
         if procname=="ARM":

@@ -35,14 +35,24 @@ def main(tilib_exe, til_dir):
     logging.basicConfig(level=logging.WARN)
 
     if not os.path.isfile(tilib_exe):
-        g_logger.warn(tilib_exe + ' is not a file')
+        g_logger.warn(f'{tilib_exe} is not a file')
         return False
     if not os.path.isdir(til_dir):
-        g_logger.warn(til_dir + ' is not a directory')
+        g_logger.warn(f'{til_dir} is not a directory')
         return False
 
     const_pattern = re.compile("([0-9A-Fa-f]{8}) ([0-9A-Fa-f]{8}) +([A-Za-z0-9_]+) ([A-Za-z0-9_]+)")
-    ignored_enum_names = set(["int", "unsigned", "const", "UINT", "void", "struct", "__int16", "char"])
+    ignored_enum_names = {
+        "int",
+        "unsigned",
+        "const",
+        "UINT",
+        "void",
+        "struct",
+        "__int16",
+        "char",
+    }
+
 
     for til_file in os.listdir(til_dir):
         til_file = os.path.join(til_dir, til_file)
@@ -72,9 +82,9 @@ def main(tilib_exe, til_dir):
             if not m:
                 continue
 
-            constant_value = int(m.group(2), 0x10)
-            enum_name = m.group(3)
-            constant_name = m.group(4)
+            constant_value = int(m[2], 0x10)
+            enum_name = m[3]
+            constant_name = m[4]
 
             # our simple parsing of the text output isn't very smart, so we get
             # some typedefs, too try to ignore those, on a best effort basis

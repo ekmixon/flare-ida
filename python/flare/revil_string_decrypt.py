@@ -18,13 +18,9 @@ import idaapi
 
 def RC4_crypt(key, buffer):
     arc4 = ARC4(key)
-    
+
     result = list(arc4.decrypt(buffer))
-    string_result = ''
-    for each in result:
-        if each != 0:
-            string_result += chr(each)
-    return string_result
+    return ''.join(chr(each) for each in result if each != 0)
 
 def decode_callback(eh, address, argv, userData):
     encoded_str_ea = eh.getRegVal('edx')
@@ -33,11 +29,11 @@ def decode_callback(eh, address, argv, userData):
     key_length = argv[2]
     data_length = argv[3]
 
-    
+
     RC4_key = idaapi.get_bytes(ENCRYPTED_STRING_BUFFER + key_offset, key_length)
     RC4_encrypted_buffer = idaapi.get_bytes(ENCRYPTED_STRING_BUFFER + key_offset + key_length, data_length)
     decrypted_str = RC4_crypt(RC4_key, RC4_encrypted_buffer)
-    print(hex(address) + ' ' + decrypted_str)
+    print(f'{hex(address)} {decrypted_str}')
     eh.analysisHelper.setComment(address, decrypted_str, False)
 
 eh = flare_emu.EmuHelper()

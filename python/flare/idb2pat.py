@@ -54,10 +54,7 @@ class Config(object):
     def __init__(self, min_func_length=6, pointer_size=4, mode=ALL_FUNCTIONS, pat_append=False, logfile="", loglevel="DEBUG", logenabled=False):
         super(Config, self).__init__()
         self.min_func_length = min_func_length
-        # TODO: get pointer_size from IDA
-        self.pointer_size = pointer_size
-        if idc.__EA64__:
-            self.pointer_size = 8
+        self.pointer_size = 8 if idc.__EA64__ else pointer_size
         self.mode = mode
         self.pat_append = pat_append
         self.logfile = logfile
@@ -78,9 +75,8 @@ class Config(object):
         self.logfile = vals.get("logfile", self.logfile)
         self.logenabled = vals.get("logenabled", self.logenabled)
 
-        if "loglevel" in vals:
-            if hasattr(logging, vals["loglevel"]):
-                self.loglevel = getattr(logging, vals["loglevel"])
+        if "loglevel" in vals and hasattr(logging, vals["loglevel"]):
+            self.loglevel = getattr(logging, vals["loglevel"])
 
 
 # generated from IDB2SIG plugin updated by TQN
@@ -247,18 +243,15 @@ def make_func_sig(config, func):
 
         ea = next_not_tail(ea)
 
-    sig = ""
-    # first 32 bytes, or til end of function
-    for ea in zrange(func.start_ea, min(func.start_ea + 32, func.end_ea)):
-        if ea in variable_bytes:
-            sig += ".."
-        else:
-            sig += "%02X" % (get_byte(ea))
+    sig = "".join(
+        ".." if ea in variable_bytes else "%02X" % (get_byte(ea))
+        for ea in zrange(func.start_ea, min(func.start_ea + 32, func.end_ea))
+    )
 
     sig += ".." * (32 - (len(sig) / 2))
 
     if func.end_ea - func.start_ea > 32:
-        crc_data = [0 for i in zrange(256)]
+        crc_data = [0 for _ in zrange(256)]
 
         # for 255 bytes starting at index 32, or til end of function, or variable byte
         for loc in zrange(32, min(func.end_ea - func.start_ea, 32 + 255)):
@@ -307,15 +300,12 @@ def make_func_sig(config, func):
             addrs = func.start_ea - ref_loc
             ref_format = " ^-%%0%dX %%s" % (config.pointer_size)
         sig += ref_format % (addr, name)
-        
+
     # Tail of the module starts at the end of the CRC16 block.
     if loc < func.end_ea - func.start_ea:
         tail = " "
         for ea in zrange(func.start_ea + loc, min(func.end_ea, func.start_ea + 0x8000)):
-            if ea in variable_bytes:
-                tail += ".."
-            else:
-                tail += "%02X" % (get_byte(ea))
+            tail += ".." if ea in variable_bytes else "%02X" % (get_byte(ea))
         sig += tail
 
     logger.debug("sig: %s", sig)
@@ -411,7 +401,7 @@ def make_func_sigs(config):
 def get_pat_file():
     logger = logging.getLogger("idb2pat:get_pat_file")
     name, extension = os.path.splitext(get_input_file_path())
-    name = name + ".pat"
+    name = f"{name}.pat"
 
     filename = ask_file(1, name, "Enter the name of the pattern file")
     if filename is None:
@@ -424,7 +414,7 @@ def get_pat_file():
 def update_config(config):
     logger = logging.getLogger("idb2pat:update_config")
     name, extension = os.path.splitext(get_input_file_path())
-    name = name + ".conf"
+    name = f"{name}.conf"
 
     if not os.path.exists(name):
         logger.debug("No configuration file provided, using defaults")

@@ -59,51 +59,54 @@ def strip_html(string):
 
 
 def parse_old_style(file, content):
-    m = re.search(
-        "<ph:apidata><api>(.*)</api><name>(.*)</name></ph:apidata>", content)
-    if m:
-        dll = m.group(1).lower()
-        function_name = m.group(2)
-
-        m = re.search("<span></span><P>(.*?)</P>", content)
-        if m:
-            description = strip_html(m.group(1))
-        else:
-            g_logger.debug("Error: Could not retrieve function description"
-                             " from file %s" % file)
-            return None
-
-        m = re.search("<P CLASS=\"clsRef\">Parameters</P><BLOCKQUOTE>(.*?)"
-                      "</BLOCKQUOTE>", content)
-        if m:
-            argument_names = re.findall("<DT><I>(.*?)</I>", m.group(1))
-            descriptions = [strip_html(string) for string in
-                            re.findall("<DD>(.*?)</DD>", m.group(1))]
-            arguments = zip(argument_names, descriptions)
-        else:
-            # It's possible to have functions without arguments
-            arguments = []
-
-        # Return value
-        m = re.search("<P CLASS=\"clsRef\">Return Value</P><BLOCKQUOTE>"
-                      "<P>(.*?)</P>", content)
-        if m:
-            return_value = strip_html(m.group(1))
-        else:
-            # If something has no return value it's not a function.
-            return None
-
-        g_logger.debug("Found function %s!%s (old style)"
-                       % (dll, function_name))
-
-        # TODO import constants into parse_old_style
-        # return_list.append((dll_name.lower(), function_name, description, arguments, constant_data, return_value))
-        constant_data = None
-        constant_enum = ""
-        return [(dll, function_name, description, arguments, constant_data,
-                constant_enum, return_value)]
-    else:
+    if not (
+        m := re.search(
+            "<ph:apidata><api>(.*)</api><name>(.*)</name></ph:apidata>",
+            content,
+        )
+    ):
         return None
+    dll = m[1].lower()
+    function_name = m[2]
+
+    if m := re.search("<span></span><P>(.*?)</P>", content):
+        description = strip_html(m[1])
+    else:
+        g_logger.debug("Error: Could not retrieve function description"
+                         " from file %s" % file)
+        return None
+
+    if m := re.search(
+        "<P CLASS=\"clsRef\">Parameters</P><BLOCKQUOTE>(.*?)" "</BLOCKQUOTE>",
+        content,
+    ):
+        argument_names = re.findall("<DT><I>(.*?)</I>", m[1])
+        descriptions = [
+            strip_html(string) for string in re.findall("<DD>(.*?)</DD>", m[1])
+        ]
+
+        arguments = zip(argument_names, descriptions)
+    else:
+        # It's possible to have functions without arguments
+        arguments = []
+
+    if m := re.search(
+        "<P CLASS=\"clsRef\">Return Value</P><BLOCKQUOTE>" "<P>(.*?)</P>",
+        content,
+    ):
+        return_value = strip_html(m[1])
+    else:
+        # If something has no return value it's not a function.
+        return None
+
+    g_logger.debug(f"Found function {dll}!{function_name} (old style)")
+
+    # TODO import constants into parse_old_style
+    # return_list.append((dll_name.lower(), function_name, description, arguments, constant_data, return_value))
+    constant_data = None
+    constant_enum = ""
+    return [(dll, function_name, description, arguments, constant_data,
+            constant_enum, return_value)]
 
 
 def parse_new_style(file, content, const_enum):
@@ -117,155 +120,150 @@ def parse_new_style(file, content, const_enum):
     if api_types not in ([], ["COM"], ["DllExport"]):
         g_logger.debug("API Type: ", ' '.join(api_types))
 
-    # Check for > not for /> because some docs are broken
-    function_names = re.findall(
-        "<MSHelp:Attr Name=\"APIName\" Value=\"(.*?)\"[ /]*>", content)
-
-    if function_names:
-        # indicates which standard enum(s) IDA knows for this argument
-        constant_enum = {}
-
-        # DLL
-        # Check for > not for /> because some docs are broken
-        dll_names = re.findall(
-            "<MSHelp:Attr Name=\"APILocation\" Value=\"(.*?)\"[ /]*>", content)
-        if not dll_names:
-            return None
-
-        # Description
-        m = re.search("<meta name=\"Description\" content=\"(.*?)\"/>",
-                      content, re.IGNORECASE)
-        if m:
-            description = strip_html(m.group(1))
-        else:
-            g_logger.debug("Error: Could not retrieve function description"
-                             " from file %s" % file)
-            return None
-
-        # Arguments
-        m = re.search("<P CLASS=\"clsRef\">Parameters</P>"
-                      "<BLOCKQUOTE>(.*?)</BLOCKQUOTE>", content)
-        if m:
-            argument_names = re.findall("<DT><I>(.*?)</I>", m.group(1))
-            descriptions = [strip_html(string) for string in
-                            re.findall("<DD>(.*?)</DD>", m.group(1))]
-            arguments = zip(argument_names, descriptions)
-        else:
-            m = re.search("<h3>Parameters</h3><dl>(.*?)</dl><h3>", content)
-            if m:
-                argument_names = re.findall("<dt><i>(.*?)</i>", m.group(1))
-                argument_names = [
-                    arg_name.replace("<i>", "") for arg_name in argument_names]
-                # Get descriptions for all arguments
-                descriptions = re.findall("<dd>(.*?)</dd>", m.group(1))
-                stripped_descriptions = [
-                    strip_html(descr) for descr in descriptions]
-                arguments = zip(argument_names, stripped_descriptions)
-
-                # Find constants and store them in dictionary
-                constant_data = {}
-                for i in range(0, len(argument_names)):
-                                        # Are there descriptions for each
-                                        # argument?
-                    if len(descriptions) != len(argument_names):
-                        constant_data = None
-                        break
-
-                        # Look in "Parameters" section for constants from
-                        # tables that include name, hex value, and description
-                    constant_names = re.findall(
-                        "<dl><dt>(.*?)</dt>", descriptions[i])
-                    constant_names = [strip_html(unicode(c, 'utf-8'))
-                                      .encode('utf-8') for c in constant_names]
-                    parsed_html = BeautifulSoup(descriptions[i])
-                    constant_descriptions = [strip_html(string.encode('ascii'))
-                                             .encode('utf-8') for string in
-                                             parsed_html.find_all(width='60%')]
-
-                    # Change name to NULL, TODO correct?
-                    for k in range(0, len(constant_names)):
-                        if constant_names[k] == '0':
-                            constant_names[k] = 'NULL'
-
-                    if len(constant_names) != len(constant_descriptions):
-                        g_logger.debug('constants count mismatch',
-                                       argument_names[i], len(constant_names),
-                                       len(constant_descriptions),
-                                       '\n\tfct:', function_names)
-
-                    # Only add entries for arguments with constant data
-                    if constant_names:
-                        constant_data[argument_names[i]] = zip(
-                            constant_names, constant_descriptions)
-                    found_enums = []
-                    for name in constant_names:
-                        #pprint(const_enum)
-                        enum_name = get_enum_for_constant(name, const_enum)
-                        if enum_name and enum_name != 'MACRO_NULL':
-                            g_logger.debug(
-                                'found constant in database', name, enum_name)
-                            found_enums.append(enum_name)
-                        else:
-                            g_logger.debug(name, 'not found in database')
-                    if constant_names and found_enums:
-                        found_enums = list(set(found_enums))  # make unique
-                        constant_enum[argument_names[i]] = ','.join(
-                            found_enums)
-                        g_logger.debug('final constant data from database',
-                                       argument_names[i], constant_enum)
-            else:
-                # Functions without arguments
-                arguments = []
-                constant_data = None
-
-        # Return value
-        m = re.search("<h3>Return Value</h3><p>(.*?)</p>", content)
-        if m:
-            return_value = strip_html(m.group(1))
-        else:
-            # If something has no return value it is not a function.
-            return None
-
-        # The blacklist holds functions we identified where the crawler
-        # currently does not extract the correct information
-        blacklist = ['RegLoadKeyA', 'RegLoadKeyW', 'RegLoadMUIString',
-                     'RegLoadMUIStringA', 'RegLoadMUIStringW',
-                     'RegNotifyChangeKeyValue', 'RegOpenCurrentUser',
-                     'RegOpenKeyA', 'RegOpenKeyW', 'RegOpenKeyEx',
-                     'RegOpenKeyExA', 'RegOpenKeyExW', 'RegOpenKeyTransacted',
-                     'RegOpenKeyTransactedA', 'RegOpenKeyTransactedW',
-                     'RegOverridePredefKey']
-        return_list = []
-        for dll_name in dll_names:
-            for function_name in function_names:
-                # Skip blacklisted functions
-                if function_name in blacklist:
-                    continue
-                g_logger.debug("Found function %s!%s (new style)" %
-                               (dll_name.lower(), function_name))
-                return_list.append((dll_name.lower(), function_name,
-                                   description, arguments, constant_data,
-                                   constant_enum, return_value))
-        return return_list
-    else:
+    if not (
+        function_names := re.findall(
+            "<MSHelp:Attr Name=\"APIName\" Value=\"(.*?)\"[ /]*>", content
+        )
+    ):
         # No functions found
         return None
+    # indicates which standard enum(s) IDA knows for this argument
+    constant_enum = {}
+
+    # DLL
+    # Check for > not for /> because some docs are broken
+    dll_names = re.findall(
+        "<MSHelp:Attr Name=\"APILocation\" Value=\"(.*?)\"[ /]*>", content)
+    if not dll_names:
+        return None
+
+    if m := re.search(
+        "<meta name=\"Description\" content=\"(.*?)\"/>",
+        content,
+        re.IGNORECASE,
+    ):
+        description = strip_html(m[1])
+    else:
+        g_logger.debug("Error: Could not retrieve function description"
+                         " from file %s" % file)
+        return None
+
+    if m := re.search(
+        "<P CLASS=\"clsRef\">Parameters</P>" "<BLOCKQUOTE>(.*?)</BLOCKQUOTE>",
+        content,
+    ):
+        argument_names = re.findall("<DT><I>(.*?)</I>", m[1])
+        descriptions = [
+            strip_html(string) for string in re.findall("<DD>(.*?)</DD>", m[1])
+        ]
+
+        arguments = zip(argument_names, descriptions)
+    elif m := re.search("<h3>Parameters</h3><dl>(.*?)</dl><h3>", content):
+        argument_names = re.findall("<dt><i>(.*?)</i>", m[1])
+        argument_names = [
+            arg_name.replace("<i>", "") for arg_name in argument_names]
+                # Get descriptions for all arguments
+        descriptions = re.findall("<dd>(.*?)</dd>", m[1])
+        stripped_descriptions = [
+            strip_html(descr) for descr in descriptions]
+        arguments = zip(argument_names, stripped_descriptions)
+        constant_data = {}
+        for i in range(len(argument_names)):
+                                    # Are there descriptions for each
+                                    # argument?
+            if len(descriptions) != len(argument_names):
+                constant_data = None
+                break
+
+                # Look in "Parameters" section for constants from
+                # tables that include name, hex value, and description
+            constant_names = re.findall(
+                "<dl><dt>(.*?)</dt>", descriptions[i])
+            constant_names = [strip_html(unicode(c, 'utf-8'))
+                              .encode('utf-8') for c in constant_names]
+            parsed_html = BeautifulSoup(descriptions[i])
+            constant_descriptions = [strip_html(string.encode('ascii'))
+                                     .encode('utf-8') for string in
+                                     parsed_html.find_all(width='60%')]
+
+                    # Change name to NULL, TODO correct?
+            for k in range(len(constant_names)):
+                if constant_names[k] == '0':
+                    constant_names[k] = 'NULL'
+
+            if len(constant_names) != len(constant_descriptions):
+                g_logger.debug('constants count mismatch',
+                               argument_names[i], len(constant_names),
+                               len(constant_descriptions),
+                               '\n\tfct:', function_names)
+
+            # Only add entries for arguments with constant data
+            if constant_names:
+                constant_data[argument_names[i]] = zip(
+                    constant_names, constant_descriptions)
+            found_enums = []
+            for name in constant_names:
+                #pprint(const_enum)
+                enum_name = get_enum_for_constant(name, const_enum)
+                if enum_name and enum_name != 'MACRO_NULL':
+                    g_logger.debug(
+                        'found constant in database', name, enum_name)
+                    found_enums.append(enum_name)
+                else:
+                    g_logger.debug(name, 'not found in database')
+            if constant_names and found_enums:
+                found_enums = list(set(found_enums))  # make unique
+                constant_enum[argument_names[i]] = ','.join(
+                    found_enums)
+                g_logger.debug('final constant data from database',
+                               argument_names[i], constant_enum)
+    else:
+        # Functions without arguments
+        arguments = []
+        constant_data = None
+
+    if m := re.search("<h3>Return Value</h3><p>(.*?)</p>", content):
+        return_value = strip_html(m[1])
+    else:
+        # If something has no return value it is not a function.
+        return None
+
+    # The blacklist holds functions we identified where the crawler
+    # currently does not extract the correct information
+    blacklist = ['RegLoadKeyA', 'RegLoadKeyW', 'RegLoadMUIString',
+                 'RegLoadMUIStringA', 'RegLoadMUIStringW',
+                 'RegNotifyChangeKeyValue', 'RegOpenCurrentUser',
+                 'RegOpenKeyA', 'RegOpenKeyW', 'RegOpenKeyEx',
+                 'RegOpenKeyExA', 'RegOpenKeyExW', 'RegOpenKeyTransacted',
+                 'RegOpenKeyTransactedA', 'RegOpenKeyTransactedW',
+                 'RegOverridePredefKey']
+    return_list = []
+    for dll_name in dll_names:
+        for function_name in function_names:
+            # Skip blacklisted functions
+            if function_name in blacklist:
+                continue
+            g_logger.debug(
+                f"Found function {dll_name.lower()}!{function_name} (new style)"
+            )
+
+            return_list.append((dll_name.lower(), function_name,
+                               description, arguments, constant_data,
+                               constant_enum, return_value))
+    return return_list
 
 
 def get_enum_for_constant(constant_name, const_enum):
-    if constant_name in const_enum:
-        return const_enum[constant_name]
-    else:
-        return False
+    return const_enum[constant_name] if constant_name in const_enum else False
 
 
 def parse_file(file, const_enum):
-    g_logger.debug("Parsing %s" % file)
+    g_logger.debug(f"Parsing {file}")
 
     try:
         text_file = open(file, "r")
     except IOError as e:
-        g_logger.warn("Could not read file " + file + e.message)
+        g_logger.warn(f"Could not read file {file}{e.message}")
         return None
     content = text_file.read().translate(None, "\r\n")
     text_file.close()
@@ -279,9 +277,8 @@ def parse_file(file, const_enum):
 
 
 def to_xml(results):
-    xml_string = "<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?>"
-    xml_string = xml_string + "<msdn>\n"
-    xml_string = xml_string + "<functions>\n"
+    xml_string = "<?xml version=\"1.0\" encoding=\"ISO-8859-1\"?>" + "<msdn>\n"
+    xml_string += "<functions>\n"
 
     #for (dll, fct, _, args, cd, _, _) in results:
     #    print '\t', dll, fct
@@ -333,17 +330,14 @@ def to_xml(results):
         xml_string = xml_string + "\t</function>\n"
 
     xml_string = xml_string + "</functions>\n"
-    xml_string = xml_string + "</msdn>"
+    xml_string = f"{xml_string}</msdn>"
 
     return xml_string
 
 
 def exclude_dir(directory):
     exclude_dirs = ["\\1033\\html", "\\1033\\workshop"]
-    for exclude_dir in exclude_dirs:
-        if directory.find(exclude_dir) != -1:
-            return True
-    return False
+    return any(directory.find(exclude_dir) != -1 for exclude_dir in exclude_dirs)
 
 
 def parse_files(msdn_directory, tilib_exe, til_dir):
@@ -368,8 +362,7 @@ def parse_files(msdn_directory, tilib_exe, til_dir):
 
             if file.endswith('htm'):
                 file_counter += 1
-                result = parse_file(os.path.join(root, file), const_enum)
-                if result:
+                if result := parse_file(os.path.join(root, file), const_enum):
                     results.append(result)
     return (file_counter, results)
 

@@ -30,7 +30,7 @@ import ctypes
 import logging
 
 from PyQt5 import QtWidgets
-from PyQt5 import QtCore 
+from PyQt5 import QtCore
 from PyQt5.QtCore import Qt
 
 import idc
@@ -51,13 +51,13 @@ logger = None
 # so have to do things with ctypes
 if not using_ida7api:
     idaname = "ida64" if idc.__EA64__ else "ida"
-    if sys.platform == "win32":
-        g_dll = ctypes.windll[idaname + ".wll"]
-    elif sys.platform == "linux2":
-        g_dll = ctypes.cdll["lib" + idaname + ".so"]
-    elif sys.platform == "darwin":
-        g_dll = ctypes.cdll["lib" + idaname + ".dylib"]
+    if sys.platform == "darwin":
+        g_dll = ctypes.cdll[f"lib{idaname}.dylib"]
 
+    elif sys.platform == "linux2":
+        g_dll = ctypes.cdll[f"lib{idaname}.so"]
+    elif sys.platform == "win32":
+        g_dll = ctypes.windll[f"{idaname}.wll"]
     ############################################################
     # Specifying function types for a few IDA SDK functions to keep the 
     # pointer-to-pointer args clear.
@@ -93,7 +93,7 @@ def manualTypeCopy(dest, destOff, destLen, src):
     i = 0
     while (i+destOff) < destLen:
         dest[i+destOff] = chr(src[i])
-        if (src[i] == 0) or (src[i] == '\x00'):
+        if src[i] in [0, '\x00']:
             break
         i += 1
 
@@ -103,16 +103,8 @@ def stripNumberedName(name):
     idx = len(name) -1
     while idx >= 0:
         if (name[idx] == '_'):
-            if (len(name)-1) == idx:
-                #last char is '_', not allowed so return name
-                return name
-            else:
-                #encountered a '_', strip here
-                return name[:idx]
-        if name[idx] in g_NUMBERS:
-            #still processing tail
-            pass
-        else:
+            return name if (len(name)-1) == idx else name[:idx]
+        if name[idx] not in g_NUMBERS:
             #encountered unexpected sequence, just return name
             return name
         idx -= 1
@@ -124,13 +116,11 @@ def loadMembersIDA7(struc, sid):
     #mixing idc & idaapi, kinda annoying but need low-level idaapi for a 
     # type access, but cant dig into structs...
     members = []
-    off = idaapi.get_struc_first_offset(struc) 
+    off = idaapi.get_struc_first_offset(struc)
     while off != idc.BADADDR:
         logger.debug('struc offset: 0x%x (%d)', off, off)
         member = idaapi.get_member(struc, off)
-        if (member == 0) or (member is None):
-            pass    #not really an error, i guess
-        else:
+        if member != 0 and member is not None:
             members.append( (off, idc.get_member_name(sid, off), member) )
         off = idaapi.get_struc_next_offset(struc, off )
     members.sort(key = lambda mem: mem[0])
@@ -143,12 +133,10 @@ def loadMembers(struc, sid):
     if using_ida7api:
         return loadMembersIDA7(struc, sid)
     members = []
-    off = g_dll.get_struc_first_offset(struc) 
+    off = g_dll.get_struc_first_offset(struc)
     while off >= 0:
         member = g_dll.get_member(struc, ctypes.c_int(off))
-        if (member == 0) or (member is None):
-            pass    #not really an error, i guess
-        else:
+        if member != 0 and member is not None:
             members.append( (off, idc.GetMemberName(sid, off), member) )
         off = g_dll.get_struc_next_offset(struc, ctypes.c_int(off) )
     members.sort(key = lambda mem: mem[0])
@@ -190,9 +178,7 @@ class StructTyperWidget(QtWidgets.QDialog):
             self.ui.listWidget.addItem(item)
 
     def getRegPrefix(self):
-        if self.ui.checkBox.isChecked():
-            return str(self.ui.lineEdit.text())
-        return ''
+        return str(self.ui.lineEdit.text()) if self.ui.checkBox.isChecked() else ''
 
 ############################################################
 
@@ -212,20 +198,15 @@ class StructTypeRunner(object):
                 struc = None
                 if dlg.ui.rb_useStackFrame.isChecked():
                     ea = idc.here()
-                    if using_ida7api:
-                        sid = idc.get_frame_id(ea)
-                    else:
-                        sid = idc.GetFrame(ea)
+                    sid = idc.get_frame_id(ea) if using_ida7api else idc.GetFrame(ea)
                     struc = idaapi.get_frame(ea)
                     logger.debug('Dialog result: accepted stack frame')
                     if (sid is None) or (sid == idc.BADADDR):
                         #i should really figure out which is the correct error case
-                        raise RuntimeError('Failed to get sid for stack frame at 0x%x' % ea) 
+                        raise RuntimeError('Failed to get sid for stack frame at 0x%x' % ea)
                     if (struc is None) or (struc == 0) or (struc == idc.BADADDR):
                         raise RuntimeError('Failed to get struc_t for stack frame at 0x%x' % ea)
-                    if using_ida7api:
-                        pass
-                    else:
+                    if not using_ida7api:
                         #need the actual pointer value, not the swig wrapped struc_t
                         struc= int(struc.this)
                 else:
@@ -240,17 +221,14 @@ class StructTypeRunner(object):
                         sid = idc.GetStrucIdByName(structName)
                     if (sid is None) or (sid == idc.BADADDR):
                         #i should really figure out which is the correct error case
-                        raise RuntimeError('Failed to get sid for %s' % structName) 
+                        raise RuntimeError(f'Failed to get sid for {structName}')
                     tid = idaapi.get_struc_id(structName)
                     if (tid is None) or (tid == 0) or (tid == idc.BADADDR):
                         #i should really figure out which is the correct error case
-                        raise RuntimeError('Failed to get tid_t for %s' % structName)
-                    if using_ida7api:
-                        struc = idaapi.get_struc(tid)
-                    else:
-                        struc = g_dll.get_struc(tid)
+                        raise RuntimeError(f'Failed to get tid_t for {structName}')
+                    struc = idaapi.get_struc(tid) if using_ida7api else g_dll.get_struc(tid)
                     if (struc is None) or (struc == 0) or (struc == idc.BADADDR):
-                        raise RuntimeError('Failed to get struc_t for %s' % structName)
+                        raise RuntimeError(f'Failed to get struc_t for {structName}')
                 foundMembers = self.processStruct(regPrefix, struc, sid)
                 if dlg.ui.rb_useStackFrame.isChecked() and (foundMembers != 0):
                     #reanalyze current function if we're analyzing a stack frame & found some func pointers
@@ -276,14 +254,11 @@ class StructTypeRunner(object):
     def filterName(self, regPrefix, name):
         funcname = stripNumberedName(name)
         if len(regPrefix) != 0:
-            reg = re.compile('('+regPrefix+')(.*)')
+            reg = re.compile(f'({regPrefix})(.*)')
             m = reg.match(funcname)
             if m is not None:
-                logger.debug('Stripping prefix: %s -> %s', name, m.group(2))
-                funcname = m.group(2)
-            else:
-                #if it does not match, continue to see if it can still match
-                pass
+                logger.debug('Stripping prefix: %s -> %s', name, m[2])
+                funcname = m[2]
         return funcname
 
     def processStructIDA7(self, regPrefix, struc, sid):

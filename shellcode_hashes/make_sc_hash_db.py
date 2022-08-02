@@ -176,7 +176,7 @@ def rcr(inVal, numShifts, cb, dataSize=32):
         raise ValueError('Bad numShifts')
     #make sure carry in bit is only 0 or 1
     cb = cb & 1
-    if (dataSize != 8) and (dataSize != 16) and (dataSize != 32) and (dataSize != 64):
+    if dataSize not in [8, 16, 32, 64]:
         raise ValueError('Bad dataSize')
     #or the carry value in there
     bitMask = ROTATE_BITMASK[dataSize]
@@ -191,7 +191,7 @@ def ror(inVal, numShifts, dataSize=32):
         return inVal
     if (numShifts < 0) or (numShifts > dataSize):
         raise ValueError('Bad numShifts')
-    if (dataSize != 8) and (dataSize != 16) and (dataSize != 32) and (dataSize != 64):
+    if dataSize not in [8, 16, 32, 64]:
         raise ValueError('Bad dataSize')
     bitMask = ROTATE_BITMASK[dataSize]
     return bitMask & ((inVal >> numShifts) | (inVal << (dataSize-numShifts)))
@@ -202,11 +202,11 @@ def rol(inVal, numShifts, dataSize=32):
         return inVal
     if (numShifts < 0) or (numShifts > dataSize):
         raise ValueError('Bad numShifts')
-    if (dataSize != 8) and (dataSize != 16) and (dataSize != 32) and (dataSize != 64):
+    if dataSize not in [8, 16, 32, 64]:
         raise ValueError('Bad dataSize')
     bitMask = ROTATE_BITMASK[dataSize]
     currVal = inVal
-    return bitMask & ((inVal << numShifts) | (inVal >> (dataSize-numShifts)))
+    return bitMask & (currVal << numShifts | currVal >> dataSize-numShifts)
 
 ############################################################
 # Start of hash implementations
@@ -451,10 +451,7 @@ def ror13AddHash32AddDll(inString,fName):
     dllHash = 0
     for c in fName:
         dllHash = ror(dllHash, 0xd, 32)
-        if ord(c) < 97:
-            dllHash = int(dllHash) + ord(c)
-        else:
-            dllHash = int(dllHash) + ord(c) - 32
+        dllHash = int(dllHash) + ord(c) if ord(c) < 97 else int(dllHash) + ord(c) - 32
         dllHash = ror(dllHash, 0xd, 32)
     dllHash = ror(dllHash, 0xd, 32)
     dllHash = ror(dllHash, 0xd, 32)
@@ -592,11 +589,11 @@ def hash_ror13AddUpperDllnameHash32(inString,fName):
         if b >= 0x61:
             b -= 0x20
         dllHash += b
-        dllHash = 0xffffffff & dllHash
+        dllHash &= 0xffffffff
     for i in inString:
         val = ror(val, 0xd, 32)
         val += ord(i)
-        val = 0xffffffff & val
+        val &= 0xffffffff
     return 0xffffffff & (dllHash + val)
 
 
@@ -680,10 +677,7 @@ def ror13AddHash32Sub20h(inString,fName):
     val = 0
     for i in inString:
         val = ror(val, 0xd, 32)
-        if ord(i) < 97:
-            val = int(val) + ord(i)
-        else:
-            val = int(val) + ord(i) - 32
+        val = int(val) + ord(i) if ord(i) < 97 else int(val) + ord(i) - 32
     return val
 
 pseudocode_ror13AddHash32Sub20h = '''acc := 0;
@@ -738,7 +732,7 @@ def xorShr8Hash32(inString,fName):
     val = 0xFFFFFFFF
     for i in inString:
         ci = ord(i)
-        ci = ci ^ val
+        ci ^= val
         ci = ci * val
         ci_hex = "%16x"%ci
         ci_hex = ci_hex[8:16]
@@ -915,7 +909,7 @@ def playWith0xe8677835Hash(inString,fName):
     val = 0xFFFFFFFF
     for i in inString:
         val ^= ord(i)
-        for j in range(0, 8):
+        for _ in range(8):
             if (val&0x1) == 1:
                 val ^= 0xe8677835
             val >>= 1
@@ -982,11 +976,13 @@ def crc32bzip2lower(inString,fName):
     crc32_table = [0] * 256
     for i in xrange(256):
         v = i << 24
-        for j in xrange(8):
-            if (v & 0x80000000) == 0:
-                v = (2 * v) & 0xffffffff
-            else:
-                v = ((2 * v) ^ 0x4C11DB7) & 0xffffffff
+        for _ in xrange(8):
+            v = (
+                (2 * v) & 0xFFFFFFFF
+                if (v & 0x80000000) == 0
+                else ((2 * v) ^ 0x4C11DB7) & 0xFFFFFFFF
+            )
+
         crc32_table[i] = v
 
     result = 0xffffffff
@@ -1058,8 +1054,7 @@ def contiApiHashing(inString, fName):
 
     count = 0
     while i != 0:
-        for index in range(0, 8):
-            API_buffer.append(inString[index + count])
+        API_buffer.extend(inString[index + count] for index in range(8))
         count += 8
         i -= 1
 
@@ -1073,7 +1068,7 @@ def contiApiHashing(inString, fName):
 
     hash_val = 0
 
-    for i in range(0, len(API_buffer)):
+    for i in range(len(API_buffer)):
         API_buffer[i] = ord(API_buffer[i].lower())
 
     v15 = 0xFF889912
@@ -1342,16 +1337,15 @@ class ShellcodeDbCreator(object):
         '''
         #lookup the library, insert if it doesn't exist
         libKey = self.getSourceLibByName(libName)
-        if libKey is None:
-            cur = self.conn.execute(sql_add_source_lib, (libName, ))    
-            self.conn.commit()
-            if cur is None:
-                raise RuntimeError("Cursor is None following source lib insert")
-            if cur.lastrowid is None:
-                raise RuntimeError("lastrowid is None following source lib insert")
-            return cur.lastrowid
-        else:
+        if libKey is not None:
             return libKey
+        cur = self.conn.execute(sql_add_source_lib, (libName, ))
+        self.conn.commit()
+        if cur is None:
+            raise RuntimeError("Cursor is None following source lib insert")
+        if cur.lastrowid is None:
+            raise RuntimeError("lastrowid is None following source lib insert")
+        return cur.lastrowid
 
     def addSymbolHash(self, hashVal, hashType, libKey, symbolName):
         '''Note: requires explicit commit afterwards by caller'''
@@ -1375,9 +1369,6 @@ class ShellcodeDbCreator(object):
             if cur.lastrowid is None:
                 raise RuntimeError("lastrowid is None following symbol hash insert")
             return cur.lastrowid
-        else:
-            #print "Skipping duplicate hash: %08x %08x %08x %s" % (hashVal, hashType, libKey, symbolName)
-            pass
 
     def checkForTable(self, tableName):
         '''
@@ -1385,10 +1376,7 @@ class ShellcodeDbCreator(object):
         '''
         cur = self.conn.execute(sql_testTableExists, (tableName,))
         row = cur.fetchone()
-        if row is None:
-            #raise UnpreparedDatabaseException("Missing database table: %s" % tableName)
-            return False
-        return True
+        return row is not None
 
 if __name__ == '__main__':
     if len(sys.argv) != 3:

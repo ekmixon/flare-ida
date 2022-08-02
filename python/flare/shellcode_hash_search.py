@@ -41,7 +41,7 @@ try:
     from PyQt5 import QtWidgets, QtCore
     from .shellcode_widget import ShellcodeWidget
 except ImportError as err:
-    print('ImportError: %s' % err)
+    print(f'ImportError: {err}')
     print ('Falling back to simple dialog-based GUI. \nPlease consider installing the HexRays PyQt5 build available at \n"http://hex-rays.com/products/ida/support/download.shtml"')
     QT_AVAILABLE = False
 
@@ -188,11 +188,8 @@ class DbStore(object):
         '''
         Returns a list of HashType objects stored in the DB.
         '''
-        retArr = []
         cur = self.conn.execute(sql_get_all_hash_types)
-        for row in cur:
-            retArr.append(HashType(*row))
-        return retArr
+        return [HashType(*row) for row in cur]
 
     def getSymbolByTypeHash(self, hashType, hashVal):
         '''
@@ -330,7 +327,7 @@ class ShellcodeHashSearcher(object):
         else:
             structId = idc.AddStrucEx(0xffffffff, structName, 0)
         if structId == 0xffffffff:
-            raise ValueError("Struct %s already exists!" % structName)
+            raise ValueError(f"Struct {structName} already exists!")
         subRange = self.hits[startHitIdx:endHitIdx]
         for i in range(len(subRange)):
             hit = subRange[i]
@@ -344,16 +341,12 @@ class ShellcodeHashSearcher(object):
         for head in idautils.Heads(start, end):
             try:
                 for i in range(2):
-                    if using_ida7api:
-                        t = idc.get_operand_type(head, i)
-                    else:
-                        t = idc.GetOpType(head, i)
+                    t = idc.get_operand_type(head, i) if using_ida7api else idc.GetOpType(head, i)
                     if t == idc.o_imm:
                         if using_ida7api:
                             opval = idc.get_operand_value(head, i)
                             insn = idautils.DecodeInstruction(head)
-                            opmask = OPERAND_MASK.get(insn.ops[i].dtype)
-                            if opmask:
+                            if opmask := OPERAND_MASK.get(insn.ops[i].dtype):
                                 opval = opval & opmask
                         else:
                             opval = idc.GetOperandValue(head, i)
@@ -389,7 +382,7 @@ class ShellcodeHashSearcher(object):
             print ("pseudo comment error at %08x" % loc)
 
     def markupLine(self, loc, sym, useDecompiler = False):
-        comm = '%s!%s' % (sym.libName, sym.symbolName)
+        comm = f'{sym.libName}!{sym.symbolName}'
         logger.debug("Making comment @ 0x%08x: %s", loc, comm)
         if using_ida7api:
             idc.set_cmt(loc, str(comm), False)
@@ -402,11 +395,7 @@ class ShellcodeHashSearcher(object):
         logger.debug("Starting to look between: %08x:%08x", start, end)
         for i in range(end-start):
             loc = start + i
-            if using_ida7api:
-                val = idaapi.get_dword(loc)
-            else:
-                val = idc.Dword(loc)
-
+            val = idaapi.get_dword(loc) if using_ida7api else idc.Dword(loc)
             for h in self.params.hashTypes:
                 hits = self.dbstore.getSymbolByTypeHash(h.hashType, val)
                 for sym in hits:
@@ -489,14 +478,18 @@ class SearchLauncher(object):
         # Only run if QT not available, so not bothering with ida7 check
         logger.debug("Promping for search types")
         if using_ida7api:
-            if idaapi.ASKBTN_YES == idaapi.ask_yn(idaapi.ASKBTN_YES, str('Search for push argument hash values?')):
+            if idaapi.ASKBTN_YES == idaapi.ask_yn(
+                idaapi.ASKBTN_YES, 'Search for push argument hash values?'
+            ):
                 self.params.searchPushArgs = True
-            if idaapi.ASKBTN_YES == idaapi.ask_yn(idaapi.ASKBTN_YES, str('Search for DWORD array of hashes?')):
+            if idaapi.ASKBTN_YES == idaapi.ask_yn(
+                idaapi.ASKBTN_YES, 'Search for DWORD array of hashes?'
+            ):
                 self.params.searchDwordArray = True
         else:
-            if idc.AskYN(1, str('Search for push argument hash value?')) == 1:
+            if idc.AskYN(1, 'Search for push argument hash value?') == 1:
                 self.params.searchPushArgs = True
-            if idc.AskYN(1, str('Search for DWORD array of hashes?')) == 1:
+            if idc.AskYN(1, 'Search for DWORD array of hashes?') == 1:
                 self.params.searchDwordArray = True
 
         if (not self.params.searchDwordArray) and (not self.params.searchPushArgs):

@@ -29,20 +29,16 @@ class Argument:
         self.description = ""
         self.constants = []
         self.enums = []
-        self._logger = logging.getLogger(
-            __name__ + '.' + self.__class__.__name__)
+        self._logger = logging.getLogger(f'{__name__}.{self.__class__.__name__}')
 
     def __str__(self):
-        return ("(%s, %s): %s" % (self.name, self.enums, self.description)).encode("ISO-8859-1")
+        return f"({self.name}, {self.enums}): {self.description}".encode("ISO-8859-1")
 
     def __repr__(self):
         return self.__str__()
 
     def get_constant(self, name):
-        for const in self.constants:
-            if const.name == name:
-                return const
-        return None
+        return next((const for const in self.constants if const.name == name), None)
 
     def merge(self, new_argument):
         if self.name != new_argument.name:
@@ -56,8 +52,7 @@ class Argument:
                 current_const = self.get_constant(constant.name)
                 if not current_const:
                     # Constant not in list yet
-                    self._logger.debug(
-                        '   Adding new constant ' + constant.name)
+                    self._logger.debug(f'   Adding new constant {constant.name}')
                     self.constants.append(constant)
                     continue
                 # Constant possibly needs to be updated
@@ -74,11 +69,10 @@ class Constant:
         self.name = ""
         self.value = ""
         self.description = ""
-        self._logger = logging.getLogger(
-            __name__ + '.' + self.__class__.__name__)
+        self._logger = logging.getLogger(f'{__name__}.{self.__class__.__name__}')
 
     def __str__(self):
-        return ("(%s, %s)" % (self.name, self.value)).encode("ISO-8859-1")
+        return f"({self.name}, {self.value})".encode("ISO-8859-1")
 
     def __repr__(self):
         return self.__str__()
@@ -87,7 +81,7 @@ class Constant:
         if self.name != new_constant.name:
             return
 
-        self._logger.debug('   Working on constant ' + self.name)
+        self._logger.debug(f'   Working on constant {self.name}')
         if new_constant.value:
             self._logger.debug('    Overwriting constant value')
             self.value = new_constant.value
@@ -104,20 +98,16 @@ class Function:
         self.description = ""
         self.arguments = []
         self.returns = ""
-        self._logger = logging.getLogger(
-            __name__ + '.' + self.__class__.__name__)
+        self._logger = logging.getLogger(f'{__name__}.{self.__class__.__name__}')
 
     def __str__(self):
-        return ("%s -- %s" % (self.name, self.arguments)).encode("ISO-8859-1")
+        return f"{self.name} -- {self.arguments}".encode("ISO-8859-1")
 
     def __repr__(self):
         return self.__str__()
 
     def get_argument(self, name):
-        for arg in self.arguments:
-            if arg.name == name:
-                return arg
-        return None
+        return next((arg for arg in self.arguments if arg.name == name), None)
 
     def merge(self, new_function):
         """
@@ -130,7 +120,7 @@ class Function:
         if self.name != new_function.name:
             return
 
-        self._logger.debug('Merging function ' + self.name)
+        self._logger.debug(f'Merging function {self.name}')
         if new_function.dll:
             self._logger.debug(' Overwriting DLL info')
             self.dll = str(new_function)
@@ -140,12 +130,11 @@ class Function:
         if new_function.arguments:
             for arg in new_function.arguments:
                 arg = str(arg)
-                self._logger.debug('  Working on argument ' + arg.name)
+                self._logger.debug(f'  Working on argument {arg.name}')
                 current_arg = self.get_argument(arg.name)
                 if not current_arg:
                     # Argument not in list yet
-                    self._logger.debug(
-                        '  Adding argument ' + arg.name + ' to arguments')
+                    self._logger.debug(f'  Adding argument {arg.name} to arguments')
                     self.arguments.append(arg)
                     continue
                 # Argument possibly needs to be updated
@@ -177,8 +166,7 @@ class FunctionHandler(xml.sax.handler.ContentHandler):
         self.mapping = {}
         self.current_step = 0
         self.functions = []
-        self._logger = logging.getLogger(
-            __name__ + '.' + self.__class__.__name__)
+        self._logger = logging.getLogger(f'{__name__}.{self.__class__.__name__}')
 
     def startElement(self, name, attributes):
         if name == "msdn":
@@ -216,13 +204,12 @@ class FunctionHandler(xml.sax.handler.ContentHandler):
             self.current_step = FunctionHandler.IN_CONSTANTS
             self.current_argument.enums = []
             if "enums" in attributes.getNames():
-                enums = attributes.getValue('enums')
-                if enums:
+                if enums := attributes.getValue('enums'):
                     self.current_argument.enums = enums.split(',')
         elif name == "returns":
             self.current_step = FunctionHandler.IN_RETURNS
         else:
-            self._logger.warning('Error START: ' + name)
+            self._logger.warning(f'Error START: {name}')
             raise ParsingException('start')
 
     def characters(self, data):
@@ -265,7 +252,7 @@ class FunctionHandler(xml.sax.handler.ContentHandler):
             self.current_step = FunctionHandler.IN_CONSTANTS
             self.current_argument.constants.append(self.current_constant)
         else:
-            self._logger.warning('Error END: ' + name)
+            self._logger.warning(f'Error END: {name}')
             raise ParsingException('end')
 
 
@@ -279,7 +266,7 @@ def parse(xmlfile):
     Argument:
     xmlfile -- xml data file storing the MSDN information
     """
-    g_logger.info('Starting parsing ' + xmlfile)
+    g_logger.info(f'Starting parsing {xmlfile}')
     parser = xml.sax.make_parser()
     try:
         handler = FunctionHandler()

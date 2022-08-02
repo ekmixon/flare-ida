@@ -158,8 +158,12 @@ class TrackerState(object):
         return cp
 
     def __str__(self):
-        info = '\n'.join([ '%s: %s,' % (self.getArgNameRep(k), repr(self.resultArgs.get(k))) for k in self.desiredState])
-        return info
+        return '\n'.join(
+            [
+                f'{self.getArgNameRep(k)}: {repr(self.resultArgs.get(k))},'
+                for k in self.desiredState
+            ]
+        )
 
     def processWriteLog(self, tracker, cVa):
         wlogEntry = tracker.va_write_map.get(cVa, None)
@@ -210,9 +214,7 @@ class TrackerState(object):
             self.saveResult(argName, pc, value)
 
     def getArgNameRep(self, argName):
-        if isinstance(argName, int) or isinstance(argName, long):
-            return '0x%08x' % argName
-        return argName
+        return '0x%08x' % argName if isinstance(argName, (int, long)) else argName
 
     def getStackArgNum(self, writeVa):
         return (writeVa - self.startSp)/self.ptrsize
@@ -223,14 +225,14 @@ class TrackerState(object):
         Assumes if argName is an integer, it's the address of an expected stack argument.
         If argName is a string, it's a register name for an expected argument.
         '''
-        if isinstance(argName, int) or isinstance(argName, long) :
+        if isinstance(argName, (int, long)):
             #argNum = (wlogEntry[1] - self.startSp)/tracker.ptrsize
             argNum = self.getStackArgNum(argName)
             self.resultArgs[argNum] = (pc, value)
         elif isinstance(argName, str):
             self.resultArgs[argName] = (pc, value)
         else:
-            raise RuntimeError('Unknown argName type: %s' % type(argName))
+            raise RuntimeError(f'Unknown argName type: {type(argName)}')
 
     def processRegMon(self, tracker, cVa):
         if tracker.regMon is None:
@@ -316,7 +318,9 @@ class ArgTracker(object):
             self.logger.debug(formatWriteLogEntry(ent))
 
     def isCargsComplete(self, cargs, num, regs):
-        return all([cargs.has_key(i+1) for i in range(num)]) and all([cargs.has_key(i) for i in regs])
+        return all(cargs.has_key(i + 1) for i in range(num)) and all(
+            cargs.has_key(i) for i in regs
+        )
 
 
     def getPushArgs(self, va, num, regs=None):

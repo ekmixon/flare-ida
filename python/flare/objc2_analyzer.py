@@ -96,8 +96,10 @@ class Objc2Analyzer():
                 opval = idc.get_operand_value(address, 1)
                 srcOpName = idc.get_name(opval, idc.ida_name.GN_VISIBLE)
                 if srcOpName[:13] == "_OBJC_IVAR_$_":
-                    logging.debug("IVAR reference found for %s, storing %s" %
-                                  (srcOpName, eh.hexString(opval)))
+                    logging.debug(
+                        f"IVAR reference found for {srcOpName}, storing {eh.hexString(opval)}"
+                    )
+
                     uc.reg_write(eh.regs[idc.print_operand(address, 0)], opval)
                     eh.skipInstruction(userData)
                     return
@@ -113,14 +115,12 @@ class Objc2Analyzer():
                         ((len(regs) == 7 and regs[3:5] == "+r") or
                          (len(regs) == 9 and regs[3] == "+" and regs[7:] == "+0"))):
                     regs = regs.split("+")
-                    reg1 = None
-                    reg2 = None
-                    if regs[0] in eh.regs:
-                        reg1 = eh.getRegVal(regs[0])
-                    if regs[1] in eh.regs:
-                        reg2 = eh.getRegVal(regs[1])
-                    logging.debug("possible IVAR reference found @%s, reg1: %s reg2: %s" % (
-                        eh.hexString(address), eh.hexString(reg1), eh.hexString(reg2)))
+                    reg1 = eh.getRegVal(regs[0]) if regs[0] in eh.regs else None
+                    reg2 = eh.getRegVal(regs[1]) if regs[1] in eh.regs else None
+                    logging.debug(
+                        f"possible IVAR reference found @{eh.hexString(address)}, reg1: {eh.hexString(reg1)} reg2: {eh.hexString(reg2)}"
+                    )
+
                     if type(reg1) is long and idc.get_name(reg1, idc.ida_name.GN_VISIBLE)[:13] == "_OBJC_IVAR_$_":
                         uc.reg_write(eh.regs[dstopnd], self.getIvarInfo(eh, reg1, userData))
                         eh.skipInstruction(userData)
@@ -148,8 +148,14 @@ class Objc2Analyzer():
                 return
 
         except Exception as e:
-            logging.debug("exception in objc2AnalyzeHookX64 @%s: (%s) %s" % (eh.hexString(address), type(e), e))
-            print("exception in objc2AnalyzeHookX64 @%s: (%s) %s" % (eh.hexString(address), type(e), e))
+            logging.debug(
+                f"exception in objc2AnalyzeHookX64 @{eh.hexString(address)}: ({type(e)}) {e}"
+            )
+
+            print(
+                f"exception in objc2AnalyzeHookX64 @{eh.hexString(address)}: ({type(e)}) {e}"
+            )
+
             eh.stopEmulation(userData)
 
 

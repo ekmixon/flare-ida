@@ -81,18 +81,17 @@ def stack_track_visitor(node, **kwargs):
         elif op.mnem.startswith('call'):
             logger.debug('Aggregating due to call: 0x%08x', eip)
             agg.aggregateStack()
-        elif all([i == '\x00' for i in bytes]):
+        elif all(i == '\x00' for i in bytes):
             logger.debug('Adding null at 0x%08x: 0x%08x', eip, va)
             agg.addItem((eip, va, bytes))
-            if op.mnem.startswith('push'):
-                #aggregating based purely on pushes lead to a lot of FPs
-                pass
-            else:
+            if not op.mnem.startswith('push'):
                 agg.aggregateStack()
-        elif all( [isAscii(i) for i in bytes]):
+        elif all(isAscii(i) for i in bytes):
             agg.addItem((eip, va, bytes))
             logger.debug('Adding wlog entry: 0x%08x 0x%08x: %s', eip, va, binascii.hexlify(bytes))
-        elif all( [isAscii(i) for i in bytes[::2]])  and all([i =='\x00' for i in bytes[1::2]]):
+        elif all(isAscii(i) for i in bytes[::2]) and all(
+            i == '\x00' for i in bytes[1::2]
+        ):
             #just looking for wchar strings made of ascii chars
             agg.addItem((eip, va, bytes))
             logger.debug('Adding possible wchar wlog entry: 0x%08x 0x%08x: %s', eip, va, binascii.hexlify(bytes))
@@ -106,7 +105,7 @@ def stack_track_visitor(node, **kwargs):
 #############################################################################
 
 def isAscii(val):
-    if isinstance(val, str) or isinstance(val, unicode):
+    if isinstance(val, (str, unicode)):
         val = ord(val)
     #if it's printable, or newline, tab
     return ((val >= 0x20) and (val < 0x7f)) or val in [0x0d, 0x0a, 0x09]
@@ -150,7 +149,7 @@ class StringAccumulator(object):
     def isNull(self, item):
         '''Returns True if all bytes in the current write log item are '\x00'''
         eip, va, bytes = item
-        return all([i == '\x00' for i in bytes])
+        return all(i == '\x00' for i in bytes)
 
     def runStackLength(self, stackLocs, startIdx, endIdx):
         #emit the previous run
@@ -226,42 +225,40 @@ def runStrings(vw, ea, uselocalagg=True):
 def getFuncRanges(ea, doAllFuncs):
     if using_ida7api:
         return getFuncRanges_ida7(ea, doAllFuncs)
-    if doAllFuncs:
-        funcs = []
-        funcGen = idautils.Functions(idc.SegStart(ea), idc.SegEnd(ea))
-        for i in funcGen:
-            funcs.append(i)
-        funcRanges = []
-        for i in range(len(funcs) - 1):
-            funcRanges.append( (funcs[i], funcs[i+1]) )
-        funcRanges.append( (funcs[-1], idc.SegEnd(ea)) )
-        return funcRanges
-    else:
-        #just get the range of the current function
-        fakeRanges = [( idc.GetFunctionAttr(idc.here(), idc.FUNCATTR_START), idc.GetFunctionAttr(idc.here(), idc.FUNCATTR_END)), ]
-        return fakeRanges
+    if not doAllFuncs:
+        return [
+            (
+                idc.GetFunctionAttr(idc.here(), idc.FUNCATTR_START),
+                idc.GetFunctionAttr(idc.here(), idc.FUNCATTR_END),
+            ),
+        ]
+
+    funcGen = idautils.Functions(idc.SegStart(ea), idc.SegEnd(ea))
+    funcs = list(funcGen)
+    funcRanges = [(funcs[i], funcs[i+1]) for i in range(len(funcs) - 1)]
+    funcRanges.append( (funcs[-1], idc.SegEnd(ea)) )
+    return funcRanges
 
 
 def getFuncRanges_ida7(ea, doAllFuncs):
-    if doAllFuncs:
-        funcs = []
-        funcGen = idautils.Functions(idc.get_segm_start(ea), idc.get_segm_end(ea))
-        for i in funcGen:
-            funcs.append(i)
-        funcRanges = []
-        for i in range(len(funcs) - 1):
-            funcRanges.append( (funcs[i], funcs[i+1]) )
-        funcRanges.append( (funcs[-1], idc.get_segm_end(ea)) )
-        return funcRanges
-    else:
-        #just get the range of the current function
-        fakeRanges = [( idc.get_func_attr(idc.here(), idc.FUNCATTR_START), idc.get_func_attr(idc.here(), idc.FUNCATTR_END)), ]
-        return fakeRanges
+    if not doAllFuncs:
+        return [
+            (
+                idc.get_func_attr(idc.here(), idc.FUNCATTR_START),
+                idc.get_func_attr(idc.here(), idc.FUNCATTR_END),
+            ),
+        ]
+
+    funcGen = idautils.Functions(idc.get_segm_start(ea), idc.get_segm_end(ea))
+    funcs = list(funcGen)
+    funcRanges = [(funcs[i], funcs[i+1]) for i in range(len(funcs) - 1)]
+    funcRanges.append( (funcs[-1], idc.get_segm_end(ea)) )
+    return funcRanges
 
 
 def isLikelyFalsePositiveString(instr):
     #if a string is all 'A' chars, very likely that it's a false positive
-    return all([a == 'A' for a in instr])
+    return all(a == 'A' for a in instr)
 
 def main(doAllFuncs=True):
     #doAllFuncs=False

@@ -123,8 +123,12 @@ def for_each_call_to(callback, va=None):
     va = va or idc.here()
 
     # Obtain and de-duplicate addresses of xrefs that are calls
-    callsites = set([x.frm for x in idautils.XrefsTo(va)
-                     if idc.print_insn_mnem(x.frm) == 'call'])
+    callsites = {
+        x.frm
+        for x in idautils.XrefsTo(va)
+        if idc.print_insn_mnem(x.frm) == 'call'
+    }
+
     for va in callsites:
         callback(va)
 
@@ -201,7 +205,7 @@ def find_instr(va_start, direction, mnems=None, op_specs=[], max_instrs=0):
     else:
         raise ValueError('Invalid direction')
 
-    for count in xrange(max_instrs):
+    for _ in xrange(max_instrs):
         va = iterate(va, va_stop)
 
         if is_conformant_instr(va, mnems, op_specs):
@@ -232,19 +236,14 @@ def is_conformant_instr(va, mnems, op_specs):
         raise ValueError(msg)
 
     mnem_current = idc.print_insn_mnem(va)
-    if mnems:
-        if isinstance(mnems, basestring):
-            if mnem_current != mnems:
-                return False
-        else:
-            if mnem_current not in mnems:
-                return False
-
-    for spec in op_specs:
-        if not is_conformant_operand(va, spec):
-            return False
-
-    return True
+    if mnems and (
+        isinstance(mnems, basestring)
+        and mnem_current != mnems
+        or not isinstance(mnems, basestring)
+        and mnem_current not in mnems
+    ):
+        return False
+    return all(is_conformant_operand(va, spec) for spec in op_specs)
 
 
 def is_conformant_operand(va, op_spec):
@@ -277,20 +276,14 @@ def is_conformant_operand(va, op_spec):
             if spec.name not in idc.print_operand(va, spec.pos):
                 return False
 
-        # For these types:
-        #   o_imm =  5   Immediate
-        #   o_far =  6   Immediate Far Address
-        #   o_near = 7   Immediate Near Address
-        # Check both address and name
         elif spec.type in (ida_ua.o_imm, ida_ua.o_far, ida_ua.o_near):
             if isinstance(spec.name, basestring):
                 if idc.print_operand(va, spec.pos) != spec.name:
                     return False
             elif idc.get_operand_value(va, spec.pos) != spec.name:
                 return False
-        else:
-            if idc.print_operand(va, spec.pos) != spec.name:
-                return False
+        elif idc.print_operand(va, spec.pos) != spec.name:
+            return False
 
     return True
 
@@ -393,13 +386,14 @@ def _emit_fnbytes(emit_instr_cb, header, footer, indent, fva=None, warn=True):
     va_end = idc.get_func_attr(fva, idc.FUNCATTR_END)
 
     # Operand types observed in position-independent code:
-    optypes_position_independent = set([
-        ida_ua.o_reg,       # 1: General Register (al,ax,es,ds...)
-        ida_ua.o_phrase,    # 3: Base + Index
-        ida_ua.o_displ,     # 4: Base + Index + Displacement
-        ida_ua.o_imm,       # 5: Immediate
-        ida_ua.o_near,      # 7: Immediate Near Address
-    ])
+    optypes_position_independent = {
+        ida_ua.o_reg,
+        ida_ua.o_phrase,
+        ida_ua.o_displ,
+        ida_ua.o_imm,
+        ida_ua.o_near,
+    }
+
 
     # Notably missing because I want to note and handle these if/as they are
     # encountered:
@@ -416,19 +410,17 @@ def _emit_fnbytes(emit_instr_cb, header, footer, indent, fva=None, warn=True):
         size = idc.get_item_size(va)
         the_bytes = idc.get_bytes(va, size)
 
-        for i in range(0, 8):
-            optype = idc.get_operand_type(va, i)
-            if optype:
+        for i in range(8):
+            if optype := idc.get_operand_type(va, i):
                 optypes_found.add(optype)
 
         s += indent + emit_instr_cb(va, the_bytes, size)
         va = idc.next_head(va)
     s += footer
 
-    position_dependent = optypes_found - optypes_position_independent
-    if position_dependent:
-        msg = ('This code may have position-dependent operands (optype %s)' %
-               (', '.join([str(o) for o in position_dependent])))
+    if position_dependent := optypes_found - optypes_position_independent:
+        msg = f"This code may have position-dependent operands (optype {', '.join([str(o) for o in position_dependent])})"
+
         if warn:
             Warning(msg)
         else:

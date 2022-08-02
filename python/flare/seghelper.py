@@ -20,7 +20,7 @@ class Segment(namedtuple('Segment', 'start end')):
     """For reasoning over segments."""
 
     def __repr__(self):
-        return 'Segment(start=%s, end=%s)' % (phex(self.start), phex(self.end))
+        return f'Segment(start={phex(self.start)}, end={phex(self.end)})'
 
     def __contains__(self, item):
         if isinstance(item, Segment):
@@ -129,10 +129,7 @@ class SegPlanner():
 
         # Worst case, try for the bottom of memory
         tryseg = Segment(va_bottom, va_bottom + size)
-        if tryseg not in self:
-            return tryseg
-
-        return None
+        return tryseg if tryseg not in self else None
 
     def __repr__(self):
         return '%r' % (self._segs)

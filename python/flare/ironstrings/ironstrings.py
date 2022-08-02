@@ -26,7 +26,7 @@ import strings
 try:
     import flare_emu
 except ImportError as e:
-    print("Could not import flare_emu: {}\nExiting.".format(e.message))
+    print(f"Could not import flare_emu: {e.message}\nExiting.")
     raise
 
 
@@ -405,10 +405,8 @@ def extract_all_strings(stack_buf):
     :param stack_buf: memory buffer
     :return: Extracted String namedtuples
     """
-    for s in strings.extract_ascii_strings(stack_buf):
-        yield s
-    for s in strings.extract_unicode_strings(stack_buf):
-        yield s
+    yield from strings.extract_ascii_strings(stack_buf)
+    yield from strings.extract_unicode_strings(stack_buf)
 
 
 def get_offset_written_at(ss_va, mem_writes):
@@ -482,11 +480,10 @@ def does_contain_substr(stackstrings, new_ss):
     :param new_ss: new stackstring candidate
     :return: True if candidate substring of an existing stackstring, False otherwise
     """
-    # IMPROVEMENT incorporate written_at in check
-    for ss in filter(lambda es: es.fva == new_ss.fva, stackstrings):
-        if new_ss.s in ss.s:
-            return True
-    return False
+    return any(
+        new_ss.s in ss.s
+        for ss in filter(lambda es: es.fva == new_ss.fva, stackstrings)
+    )
 
 
 def extend_existing(new_string, existing_strings):
@@ -550,14 +547,14 @@ def print_summary(cnt_functions, cnt_analyzed, cnt_found, cnt_commented, errors)
     if errors:
         print("Encountered {:d} errors".format(len(errors)))
         for err in errors:
-            print(" - {}".format(err))
+            print(f" - {err}")
 
 
 def print_plain_summary(stackstrings):
     unique = get_unique_strings(stackstrings)
     print("\nRecovered {:d} unique stackstrings\n{:-<24}".format(len(unique), ""))
     for s in unique:
-        print("{}".format(s))
+        print(f"{s}")
 
 
 def get_unique_strings(stackstrings):
@@ -566,10 +563,7 @@ def get_unique_strings(stackstrings):
     :param stackstrings: list of all stackstrings
     :return: list of unique stackstrings
     """
-    unique = set()
-    for ss in stackstrings:
-        unique.add(ss.s)
-    return unique
+    return {ss.s for ss in stackstrings}
 
 
 def format_comment(comment):
@@ -594,10 +588,10 @@ def append_comment(va, new_cmt, repeatable=False):
     if not cmt:
         # no existing comment
         cmt = new_cmt
+    elif new_cmt in cmt:
+        # comment already exists
+        return True
     else:
-        if new_cmt in cmt:
-            # comment already exists
-            return True
         cmt = cmt + "\n" + new_cmt
     return idc.set_cmt(va, cmt, repeatable)
 

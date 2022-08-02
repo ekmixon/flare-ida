@@ -48,8 +48,7 @@ logger = c_jayutils.getLogger('')
 
 def decodeString(strLoc, count, const1):
     buff = idc.GetManyBytes(strLoc, count)
-    decString = decodeSoguBytes20100921_strings(buff, 0, count, const1)
-    return decString
+    return decodeSoguBytes20100921_strings(buff, 0, count, const1)
 
 def decodeSoguBytes20100921_strings(inBytes, offset, count, const1):
     v9 = const1
